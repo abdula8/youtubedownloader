@@ -5,3 +5,5 @@ ffmpeg_bin/
 __pycache__/
 
 youtube_downloader.log
+
+command toupload to github
