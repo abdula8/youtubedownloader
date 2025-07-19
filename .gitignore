@@ -1,0 +1,7 @@
+YouTube_Downloads/
+
+ffmpeg_bin/
+
+__pycache__/
+
+youtube_downloader.log
