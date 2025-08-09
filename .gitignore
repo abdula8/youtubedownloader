@@ -1,5 +1,13 @@
 YouTube_Downloads/
 
+__pycache__/
+
+ydl/
+
+cc_download/
+
+command-toupload-to-github
+
 ffmpeg_bin/
 
 __pycache__/

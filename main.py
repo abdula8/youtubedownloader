@@ -4,6 +4,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from setup_helper import full_setup
+# import cc_download.main as cc
 
 full_setup()  # Ensure environment is ready
 
@@ -43,6 +44,7 @@ def fetch_videos():
     url = url_entry.get().strip()
 
     if not url:
+        print(url)
         messagebox.showwarning("Input Error", "Please enter a playlist URL.")
         return
 
@@ -55,13 +57,20 @@ def fetch_videos():
     try:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            entries = info.get('entries', [])
-            for i, entry in enumerate(entries):
-                title = entry.get('title', 'Unknown Title')
-                playlist_entries.append(entry)
-                video_listbox.insert(tk.END, f"{i+1:03d}. {title}")
-        if not entries:
-            messagebox.showerror("Playlist Error", "No videos found in playlist.")
+            # Detect if it's a playlist
+            if 'entries' in info:
+                entries = info['entries']
+                for i, entry in enumerate(entries):
+                    title = entry.get('title', 'Unknown Title')
+                    playlist_entries.append(entry)
+                    video_listbox.insert(tk.END, f"{i+1:03d}. {title}")
+                if not entries:
+                    messagebox.showerror("Playlist Error", "No videos found in playlist.")
+            else:
+                # Single video
+                title = info.get('title', 'Unknown Title')
+                playlist_entries.append(info)
+                video_listbox.insert(tk.END, f"001. {title}")
     except Exception as e:
         messagebox.showerror("Error", f"Could not fetch playlist info:\n{e}")
 
@@ -115,9 +124,10 @@ def download_selected():
         ydl_opts['postprocessors'] = [
             {
                 'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4'
+                'preferedformat': 'mkv'
             }
         ]
+        # ydl_opts['format'] = 'bestvideo+bestaudio/best'
 
     def run_download():
         try:
@@ -129,7 +139,6 @@ def download_selected():
             messagebox.showerror("Error", f"Download failed:\n{e}")
 
     threading.Thread(target=run_download, daemon=True).start()
-
 
 # --- GUI Layout ---
 tk.Label(root, text="YouTube Playlist URL:").pack(pady=(10, 0))
@@ -145,6 +154,8 @@ type_var = tk.StringVar(value="Video")
 tk.Label(frame, text="Download Type:").grid(row=0, column=0)
 tk.Radiobutton(frame, text="Video", variable=type_var, value="Video", command=update_quality_options).grid(row=0, column=1)
 tk.Radiobutton(frame, text="Audio", variable=type_var, value="Audio", command=update_quality_options).grid(row=0, column=2)
+# new added for captions
+# tk.Radiobutton(frame, text="Transcript", variable=type_var,value="Captions[CC]").grid(row=0, column=3)
 
 video_qualities = ['best', 'bestvideo[height<=1080]+bestaudio', 'bestvideo[height<=720]+bestaudio', 'worst']
 audio_qualities = ['bestaudio', 'bestaudio[ext=mp3]', 'bestaudio/best']
