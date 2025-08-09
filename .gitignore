@@ -8,8 +8,12 @@ cc_download/
 
 command-toupload-to-github
 
+command toupload to github
+
 ffmpeg_bin/
 
 __pycache__/
 
 youtube_downloader.log
+
+command toupload to github
