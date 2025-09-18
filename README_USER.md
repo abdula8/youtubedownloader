@@ -81,8 +81,8 @@
 ### **Step 1: Download & Install**
 ```bash
 # Download the app
-git clone https://github.com/your-repo/youtube-downloader-pro
-cd youtube-downloader-pro
+git clone https://github.com/abdula8/youtubedownloader
+cd youtubedownloader
 
 # Run the app
 python qt_main.py
