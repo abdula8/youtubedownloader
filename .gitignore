@@ -1,38 +1,23 @@
 YouTube_Downloads/
-
 __pycache__/
-
 ydl/
-
-OLD-code\
-
+legacy_code
 mkv-to-mp4/
-
 cc_download/
-
 ffmpeg_bin/
-
 __pycache__/
-
 youtubeDownloadToEXE/
+bkup/
 
 main-Copy.py
-
 test.py
-
 command-toupload-to-github
-
 "command toupload to github"
-
 youtube_downloader.log
-
 "command toupload to github"
-
 captionsDownload.py
-
 old-main-Copy.py
-
 mkvTomp4Converter.py
-
 main.py
 main-Copy.py
+YouTubeDownloader.spec
