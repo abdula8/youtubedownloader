@@ -13,6 +13,7 @@ from datetime import datetime
 import logging
 import re
 import requests
+import subprocess
 # import re
 
 
@@ -51,12 +52,49 @@ logging.basicConfig(
 # --- UI Setup ---
 root = tk.Tk()
 root.title("YouTube Playlist Downloader")
-root.geometry("650x500")
+root.geometry("750x600")
 root.resizable(True, True)
+
+# Make the UI scrollable
+container = tk.Frame(root)
+container.pack(fill='both', expand=True)
+
+canvas = tk.Canvas(container)
+scrollbar = tk.Scrollbar(container, orient='vertical', command=canvas.yview)
+scrollbar.pack(side='right', fill='y')
+canvas.pack(side='left', fill='both', expand=True)
+canvas.configure(yscrollcommand=scrollbar.set)
+
+content = tk.Frame(canvas)
+content.bind(
+    '<Configure>',
+    lambda e: canvas.configure(scrollregion=canvas.bbox('all'))
+)
+canvas.create_window((0, 0), window=content, anchor='nw')
+
+# Mouse wheel scrolling bindings (Windows/Linux)
+def _on_mousewheel(event):
+    try:
+        delta = int(-1*(event.delta/120))
+        canvas.yview_scroll(delta, 'units')
+    except Exception:
+        pass
+
+def _on_mousewheel_linux_up(event):
+    canvas.yview_scroll(-1, 'units')
+
+def _on_mousewheel_linux_down(event):
+    canvas.yview_scroll(1, 'units')
+
+canvas.bind_all('<MouseWheel>', _on_mousewheel)
+canvas.bind_all('<Button-4>', _on_mousewheel_linux_up)
+canvas.bind_all('<Button-5>', _on_mousewheel_linux_down)
 
 playlist_entries = []
 current_formats = []  # populated by Load Formats per selected item
 cookies_path = None   # optional cookies file for sites like Facebook
+convert_selected_btn = None
+convert_all_btn = None
 
 def resolve_final_url(input_url: str) -> str:
     try:
@@ -69,6 +107,33 @@ def resolve_final_url(input_url: str) -> str:
         return input_url
     except Exception:
         return input_url
+
+# Utility: scan for video files (used by Scan Folder)
+def find_video_files(folder_path: str):
+    video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
+    matches = []
+    for dirpath, dirnames, filenames in os.walk(folder_path):
+        for filename in filenames:
+            if any(filename.lower().endswith(ext) for ext in video_extensions):
+                matches.append(os.path.join(dirpath, filename))
+    return matches
+
+# Utility: convert a single file to MP4 via ffmpeg (stream copy)
+def convert_to_mp4(input_file: str):
+    base, ext = os.path.splitext(input_file)
+    output_file = f"{base}.mp4"
+    if os.path.normpath(input_file).lower() == os.path.normpath(output_file).lower():
+        return True, "Already MP4"
+    cmd = ['ffmpeg', '-y', '-i', input_file, '-c:v', 'copy', '-c:a', 'copy', output_file]
+    try:
+        proc = subprocess.run(cmd, check=True, text=True, capture_output=True, encoding='utf-8')
+        return True, output_file
+    except FileNotFoundError:
+        return False, "FFmpeg not found. Install and add to PATH."
+    except subprocess.CalledProcessError as e:
+        return False, e.stderr or str(e)
+    except Exception as e:
+        return False, str(e)
 success_count = 0
 failure_count = 0
 
@@ -77,6 +142,13 @@ def fetch_videos():
     global playlist_entries
     playlist_entries = []
     video_listbox.delete(0, tk.END)
+    # Reset action buttons to download mode
+    try:
+        start_btn.pack(pady=(5, 10))
+        convert_selected_btn.pack_forget()
+        convert_all_btn.pack_forget()
+    except Exception:
+        pass
     url = url_entry.get().strip()
     # Resolve share/redirected URLs (e.g., Facebook share links)
     url = resolve_final_url(url)
@@ -123,8 +195,29 @@ def fetch_videos():
 
 
 def update_quality_options(*args):
-    q_combo['values'] = video_qualities if type_var.get() == 'Video' else audio_qualities
-    q_combo.current(0)
+    mode = type_var.get()
+    if mode == 'Video':
+        q_combo['values'] = video_qualities
+        q_combo.current(0)
+        q_combo.pack_configure(pady=(5, 10))
+        fmt_btn.pack_configure(pady=(0, 5))
+        captions_lang_combo_inline.grid_remove()
+    elif mode == 'Audio':
+        q_combo['values'] = audio_qualities
+        q_combo.current(0)
+        q_combo.pack_configure(pady=(5, 10))
+        fmt_btn.pack_configure(pady=(0, 5))
+        captions_lang_combo_inline.grid_remove()
+    else:
+        # Captions mode
+        q_combo['values'] = []
+        try:
+            q_combo.set('')
+        except Exception:
+            pass
+        q_combo.pack_forget()
+        fmt_btn.pack_forget()
+        captions_lang_combo_inline.grid()
 
 
 def load_formats_for_selection():
@@ -210,16 +303,17 @@ def download_selected():
         return
 
     url = url_entry.get().strip()
-    video_type = type_var.get()
-    # Resolve selected quality: if user used Load Formats, map label->selector
+    mode = type_var.get()
+    # Resolve selected quality when in Video/Audio mode
     selected_label = q_combo.get()
     quality = None
-    for selector, label in current_formats:
-        if label == selected_label:
-            quality = selector
-            break
-    if not quality:
-        quality = selected_label
+    if mode in ('Video', 'Audio'):
+        for selector, label in current_formats:
+            if label == selected_label:
+                quality = selector
+                break
+        if not quality:
+            quality = selected_label
     selected_indices = [i for i in selected]
 
     progress_label.config(text="Starting download...")
@@ -250,6 +344,30 @@ def download_selected():
         failure_count = 0
         total_items = len(selected_indices)
         counts_label.config(text=f"Downloaded: {success_count}/{total_items} | Errors: {failure_count}")
+
+        # Captions mode: use a streamlined captions flow
+        if mode == 'Captions':
+            lang = captions_lang_var.get().strip() or 'en'
+            target_dir = os.path.join(DOWNLOAD_DIR, 'captions')
+            os.makedirs(target_dir, exist_ok=True)
+            try:
+                opts = {
+                    'skip_download': True,
+                    'writeautomaticsub': True,
+                    'writesubtitles': True,
+                    'subtitleslangs': [lang],
+                    'outtmpl': os.path.join(target_dir, '%(title)s.%(ext)s'),
+                    'subtitle_format': 'vtt',
+                    'quiet': False,
+                    'ignoreerrors': True,
+                }
+                with YoutubeDL(opts) as ydl:
+                    ydl.download([url])
+                messagebox.showinfo("Captions", f"Captions downloaded to:\n{target_dir}")
+            except Exception as e:
+                logging.error(f"Captions download failed: {e}")
+                messagebox.showerror("Captions Error", f"Failed to download captions:\n{e}")
+            return
 
         for offset, idx in enumerate(selected_indices, start=1):
             try:
@@ -302,7 +420,7 @@ def download_selected():
             if use_archive:
                 ydl_opts_item['download_archive'] = ARCHIVE_FILE
 
-            if video_type == 'Audio':
+            if mode == 'Audio':
                 ydl_opts_item['extractaudio'] = True
                 ydl_opts_item['postprocessors'] = [
                     {
@@ -311,7 +429,7 @@ def download_selected():
                         'preferredquality': '192',
                     }
                 ]
-            else:
+            else:  # Video
                 ydl_opts_item['postprocessors'] = [
                     {
                         'key': 'FFmpegVideoRemuxer',
@@ -355,44 +473,57 @@ def download_selected():
     threading.Thread(target=run_download, daemon=True).start()
 
 # --- GUI Layout ---
-tk.Label(root, text="YouTube Playlist URL:").pack(pady=(10, 0))
-url_entry = tk.Entry(root, width=80)
+tk.Label(content, text="Media URL:").pack(pady=(10, 0))
+url_entry = tk.Entry(content, width=80)
 url_entry.pack()
 
-fetch_btn = tk.Button(root, text="Fetch Playlist", command=fetch_videos)
+fetch_btn = tk.Button(content, text="Fetch Playlist", command=fetch_videos)
 fetch_btn.pack(pady=(5, 10))
 
-frame = tk.Frame(root)
+frame = tk.Frame(content)
 frame.pack()
 type_var = tk.StringVar(value="Video")
-tk.Label(frame, text="Download Type:").grid(row=0, column=0)
+tk.Label(frame, text="Type:").grid(row=0, column=0)
 tk.Radiobutton(frame, text="Video", variable=type_var, value="Video", command=update_quality_options).grid(row=0, column=1)
 tk.Radiobutton(frame, text="Audio", variable=type_var, value="Audio", command=update_quality_options).grid(row=0, column=2)
-# new added for captions
-# tk.Radiobutton(frame, text="Transcript", variable=type_var,value="Captions[CC]").grid(row=0, column=3)
+tk.Radiobutton(frame, text="Captions", variable=type_var, value="Captions", command=update_quality_options).grid(row=0, column=3)
 
 video_qualities = ['best', 'bestvideo[height<=1080]+bestaudio', 'bestvideo[height<=720]+bestaudio', 'worst']
 audio_qualities = ['bestaudio', 'bestaudio[ext=mp3]', 'bestaudio/best']
 
-q_combo = ttk.Combobox(root, values=video_qualities, state="readonly", width=60)
+q_combo = ttk.Combobox(content, values=video_qualities, state="readonly", width=60)
 q_combo.current(0)
 q_combo.pack(pady=(5, 10))
 
-# Button to load formats for arbitrary sites (Instagram, TikTok, Twitter, LinkedIn, etc.)
-fmt_btn = tk.Button(root, text="Load Formats", command=load_formats_for_selection)
-fmt_btn.pack(pady=(0, 5))
+formats_frame = tk.Frame(content)
+formats_frame.pack()
+q_combo.pack_forget()
+q_combo = ttk.Combobox(formats_frame, values=video_qualities, state="readonly", width=60)
+q_combo.current(0)
+q_combo.pack(side='left', pady=(5, 10))
 
-video_listbox = tk.Listbox(root, selectmode=tk.MULTIPLE, width=80, height=10)
+# Button to load formats for arbitrary sites (Instagram, TikTok, Twitter, LinkedIn, etc.)
+fmt_btn = tk.Button(formats_frame, text="Load Formats", command=load_formats_for_selection)
+fmt_btn.pack(side='left', padx=(8, 0), pady=(5, 10))
+
+# Captions language dropdown (shown only when Captions is selected)
+captions_lang_var = tk.StringVar(value='en')
+captions_lang_combo_inline = ttk.Combobox(frame, values=["en", "ar"], state="readonly", width=8, textvariable=captions_lang_var)
+captions_lang_combo_inline.grid(row=0, column=4, padx=(10,0))
+captions_lang_combo_inline.grid_remove()
+
+video_listbox = tk.Listbox(content, selectmode=tk.MULTIPLE, width=80, height=12)
 video_listbox.pack()
 
-scrollbar = tk.Scrollbar(root, orient="vertical", command=video_listbox.yview)
-video_listbox.config(yscrollcommand=scrollbar.set)
-scrollbar.place(x=605, y=220, height=165)
+# Internal list scroll for the listbox
+list_scrollbar = tk.Scrollbar(content, orient="vertical", command=video_listbox.yview)
+video_listbox.config(yscrollcommand=list_scrollbar.set)
+list_scrollbar.pack(fill='y')
 
-progress_label = tk.Label(root, text="")
+progress_label = tk.Label(content, text="")
 progress_label.pack(pady=(5, 0))
 
-progress_bar = ttk.Progressbar(root, length=400, mode='determinate')
+progress_bar = ttk.Progressbar(content, length=500, mode='determinate')
 progress_bar.pack(pady=(2, 10))
 
 # Download directory chooser and counters
@@ -407,16 +538,16 @@ def choose_folder():
         os.makedirs(AUDIO_COPY_DIR, exist_ok=True)
         folder_label.config(text=f"Folder: {DOWNLOAD_DIR}")
 
-folder_frame = tk.Frame(root)
+folder_frame = tk.Frame(content)
 folder_frame.pack(pady=(0, 5))
 tk.Button(folder_frame, text="Choose Folder", command=choose_folder).grid(row=0, column=0, padx=(0, 10))
 folder_label = tk.Label(folder_frame, text=f"Folder: {DOWNLOAD_DIR}")
 folder_label.grid(row=0, column=1)
 
-counts_label = tk.Label(root, text="Downloaded: 0/0 | Errors: 0")
+counts_label = tk.Label(content, text="Downloaded: 0/0 | Errors: 0")
 counts_label.pack(pady=(0, 5))
 
-start_btn = tk.Button(root, text="Start Download", command=download_selected, bg="green", fg="white")
+start_btn = tk.Button(content, text="Start Download", command=download_selected, bg="green", fg="white")
 start_btn.pack(pady=(5, 10))
 
 # Cookies loader to support sites requiring auth/headers (e.g., Facebook)
@@ -428,7 +559,104 @@ def load_cookies():
         cookies_path = path
         messagebox.showinfo("Cookies Loaded", f"Using cookies from:\n{cookies_path}")
 
-cookies_btn = tk.Button(root, text="Load Cookies.txt (optional)", command=load_cookies)
+cookies_btn = tk.Button(content, text="Load Cookies.txt (optional)", command=load_cookies)
 cookies_btn.pack(pady=(0, 5))
+
+# Inline buttons on the right of type options: Convert MKV to MP4 and Scan Folder
+def convert_mkv_button():
+    paths = filedialog.askopenfilenames(title="Choose MKV/Video files",
+                                        filetypes=[("Video Files", "*.mkv;*.mp4;*.avi;*.mov;*.wmv;*.flv;*.webm"), ("All Files", "*.*")])
+    if not paths:
+        return
+    def _run():
+        ok, fail = 0, 0
+        for f in paths:
+            success, msg = convert_to_mp4(f)
+            if success:
+                ok += 1
+            else:
+                fail += 1
+                logging.error(f"Convert failed for {f}: {msg}")
+        message = f"Converted: {ok}, Failed: {fail}"
+        if fail:
+            message += "\nCheck log for details."
+        messagebox.showinfo("Convert", message)
+    threading.Thread(target=_run, daemon=True).start()
+
+def scan_folder_button():
+    path = filedialog.askdirectory(initialdir=DOWNLOAD_DIR, title="Choose folder to scan for videos")
+    if not path:
+        return
+    video_listbox.delete(0, tk.END)
+    def _scan():
+        files = find_video_files(path)
+        for p in files:
+            video_listbox.insert(tk.END, p)
+        if not files:
+            messagebox.showinfo("Scan", "No videos found in the selected folder.")
+    def _post():
+        try:
+            start_btn.pack_forget()
+            convert_selected_btn.pack(pady=(5, 0))
+            convert_all_btn.pack(pady=(5, 10))
+        except Exception:
+            pass
+    def _run():
+        _scan()
+        root.after(0, _post)
+    threading.Thread(target=_run, daemon=True).start()
+
+tk.Button(frame, text="Convert MKV to MP4", command=convert_mkv_button).grid(row=0, column=5, padx=(10,0))
+tk.Button(frame, text="Scan Folder\nfor mkv", command=scan_folder_button).grid(row=0, column=6, padx=(6,0))
+
+# Inline convert action buttons (hidden by default, appear after Scan Folder)
+convert_selected_btn = tk.Button(content, text="Convert Selected", command=lambda: convert_selected_action_inline())
+convert_all_btn = tk.Button(content, text="Convert All", command=lambda: convert_all_action_inline())
+convert_selected_btn.pack_forget()
+convert_all_btn.pack_forget()
+
+def convert_selected_action_inline():
+    sel = video_listbox.curselection()
+    if not sel:
+        messagebox.showwarning("Convert", "Select one or more files to convert.")
+        return
+    files = [video_listbox.get(i) for i in sel]
+    def _run():
+        ok, fail = 0, 0
+        for f in files:
+            success, msg = convert_to_mp4(f)
+            if success:
+                ok += 1
+            else:
+                fail += 1
+                logging.error(f"Convert failed for {f}: {msg}")
+        message = f"Converted: {ok}, Failed: {fail}"
+        if fail:
+            message += "\nCheck log for details."
+        messagebox.showinfo("Convert Selected", message)
+    threading.Thread(target=_run, daemon=True).start()
+
+def convert_all_action_inline():
+    count = video_listbox.size()
+    if count == 0:
+        messagebox.showwarning("Convert", "No files to convert. Run Scan first.")
+        return
+    files = [video_listbox.get(i) for i in range(count)]
+    def _run():
+        ok, fail = 0, 0
+        for f in files:
+            success, msg = convert_to_mp4(f)
+            if success:
+                ok += 1
+            else:
+                fail += 1
+                logging.error(f"Convert failed for {f}: {msg}")
+        message = f"Converted: {ok}, Failed: {fail}"
+        if fail:
+            message += "\nCheck log for details."
+        messagebox.showinfo("Convert All", message)
+    threading.Thread(target=_run, daemon=True).start()
+
+## Removed separate Captions and Converter frames; integrated into main controls
 
 root.mainloop()

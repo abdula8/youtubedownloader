@@ -1,7 +1,4 @@
 # YouTube Playlist & Single Video Downloader (GUI)
-# [Developer](https://github.com/abdula8/youtubedownloader/blob/main/README_DEVELOPER.md)
-# [User](https://github.com/abdula8/youtubedownloader/blob/main/README_USER.md)
-New PyQt5 UI is available in `qt_main.py` with feature parity and UX upgrades.
 
 This Python application provides a **simple graphical interface** for downloading YouTube videos or playlists in different formats and qualities.  
 It supports:
@@ -37,7 +34,7 @@ Before running the app, make sure you have:
 
 ### the script download and install eny needed libraries without user need to do that from the file script "full_setup"
 
-## How to Run (Tkinter legacy)
+## How to Run
 
 1. Clone or download this repository.
 2. Run the application:
@@ -45,23 +42,6 @@ Before running the app, make sure you have:
    python main.py
 3. the script will install the important libraries needed for the application automatically without user interaction in backround before running in the first time and each time check again for libraries  
 4. Place your YouTube URLs in the GUI when prompted.
-
-## How to Run (New PyQt5)
-
-```bash
-python qt_main.py
-```
-
-Default downloads to your user Videos folder under `YouTube_Downloads`. Settings (download folder, cookies path, last URL, mode, CC language) are saved automatically.
-
-## Build Windows EXE (PyInstaller)
-
-```bash
-py -3 -m pip install pyinstaller
-py -3 -m PyInstaller --noconfirm --clean --name "YouTubeDownloader" --windowed qt_main.py
-```
-
-The resulting app can be installed system-wide with your preferred installer (e.g., Inno Setup). Set the default download directory to `C:\Users\%USERNAME%\Videos\YouTube_Downloads`.
 
 ## Usage Instructions
 

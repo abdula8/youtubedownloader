@@ -4,9 +4,15 @@ __pycache__/
 
 ydl/
 
+OLD-code\
+
 mkv-to-mp4/
 
 cc_download/
+
+ffmpeg_bin/
+
+__pycache__/
 
 youtubeDownloadToEXE/
 
@@ -16,13 +22,17 @@ test.py
 
 command-toupload-to-github
 
-command toupload to github
-
-ffmpeg_bin/
-
-__pycache__/
+"command toupload to github"
 
 youtube_downloader.log
 
-command toupload to github
+"command toupload to github"
 
+captionsDownload.py
+
+old-main-Copy.py
+
+mkvTomp4Converter.py
+
+main.py
+main-Copy.py

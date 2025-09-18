@@ -8,7 +8,7 @@ import urllib.request
 import zipfile
 import tarfile
 
-REQUIRED_PACKAGES = ["yt_dlp", "ffmpeg-python", "PyQt5", "requests"]
+REQUIRED_PACKAGES = ["yt_dlp", "ffmpeg-python"]
 
 def install_missing_packages():
     for pkg in REQUIRED_PACKAGES:
